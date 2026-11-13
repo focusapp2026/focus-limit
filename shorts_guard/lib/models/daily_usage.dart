@@ -1,18 +1,13 @@
-import 'short_video.dart';
+import 'short_platform.dart';
 
 class DailyUsage {
-  const DailyUsage({
-    required this.dayKey,
-    required this.tiktokWatched,
-    required this.youtubeWatched,
-  });
+  const DailyUsage({required this.dayKey, required this.viewedIds});
 
   factory DailyUsage.today() =>
-      DailyUsage(dayKey: todayKey(), tiktokWatched: 0, youtubeWatched: 0);
+      DailyUsage(dayKey: todayKey(), viewedIds: const {});
 
   final String dayKey;
-  final int tiktokWatched;
-  final int youtubeWatched;
+  final Map<String, List<String>> viewedIds;
 
   static String todayKey([DateTime? date]) {
     final now = date ?? DateTime.now();
@@ -21,30 +16,43 @@ class DailyUsage {
     return '${now.year}-$month-$day';
   }
 
-  int countFor(VideoPlatform platform) => switch (platform) {
-    VideoPlatform.tiktok => tiktokWatched,
-    VideoPlatform.youtube => youtubeWatched,
-  };
+  static Duration timeUntilReset([DateTime? now]) {
+    final current = now ?? DateTime.now();
+    final nextMidnight = DateTime(current.year, current.month, current.day + 1);
+    return nextMidnight.difference(current);
+  }
 
-  int remainingFor(VideoPlatform platform) =>
+  int countFor(ShortPlatform platform) => viewedIds[platform.name]?.length ?? 0;
+
+  int remainingFor(ShortPlatform platform) =>
       (platform.dailyLimit - countFor(platform)).clamp(0, platform.dailyLimit);
 
-  DailyUsage increment(VideoPlatform platform) => DailyUsage(
-    dayKey: dayKey,
-    tiktokWatched: tiktokWatched + (platform == VideoPlatform.tiktok ? 1 : 0),
-    youtubeWatched:
-        youtubeWatched + (platform == VideoPlatform.youtube ? 1 : 0),
-  );
+  bool hasViewed(ShortPlatform platform, String viewId) =>
+      viewedIds[platform.name]?.contains(viewId) ?? false;
 
-  factory DailyUsage.fromJson(Map<String, dynamic> json) => DailyUsage(
-    dayKey: json['dayKey'] as String,
-    tiktokWatched: json['tiktokWatched'] as int,
-    youtubeWatched: json['youtubeWatched'] as int,
-  );
+  DailyUsage withView(ShortPlatform platform, String viewId) {
+    final updated = {
+      for (final entry in viewedIds.entries)
+        entry.key: List<String>.of(entry.value),
+    };
+    updated.update(
+      platform.name,
+      (ids) => [...ids, viewId],
+      ifAbsent: () => [viewId],
+    );
+    return DailyUsage(dayKey: dayKey, viewedIds: updated);
+  }
 
-  Map<String, Object?> toJson() => {
-    'dayKey': dayKey,
-    'tiktokWatched': tiktokWatched,
-    'youtubeWatched': youtubeWatched,
-  };
+  factory DailyUsage.fromJson(Map<String, dynamic> json) {
+    final rawViews = json['viewedIds'] as Map<String, dynamic>;
+    return DailyUsage(
+      dayKey: json['dayKey'] as String,
+      viewedIds: rawViews.map(
+        (platform, ids) =>
+            MapEntry(platform, (ids as List<dynamic>).cast<String>()),
+      ),
+    );
+  }
+
+  Map<String, Object?> toJson() => {'dayKey': dayKey, 'viewedIds': viewedIds};
 }

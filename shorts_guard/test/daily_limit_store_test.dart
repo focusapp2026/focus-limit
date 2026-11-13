@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shorts_guard/models/short_video.dart';
+import 'package:shorts_guard/models/short_platform.dart';
 import 'package:shorts_guard/services/daily_limit_store.dart';
 
 void main() {
@@ -10,21 +10,29 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('يسمح بخمسة فيديوهات TikTok وفيديوهين YouTube فقط', () async {
+  test('يسمح بالحد اليومي لكل منصة ثم يتوقف العداد', () async {
     final store = DailyLimitStore();
 
-    for (var index = 0; index < 5; index++) {
-      expect(await store.consume(VideoPlatform.tiktok), isTrue);
+    for (final platform in ShortPlatform.values) {
+      for (var index = 0; index < platform.dailyLimit + 2; index++) {
+        await store.recordView(platform, '${platform.name}-$index');
+      }
     }
-    expect(await store.consume(VideoPlatform.tiktok), isFalse);
-
-    for (var index = 0; index < 2; index++) {
-      expect(await store.consume(VideoPlatform.youtube), isTrue);
-    }
-    expect(await store.consume(VideoPlatform.youtube), isFalse);
 
     final usage = await store.loadUsage();
-    expect(usage.tiktokWatched, 5);
-    expect(usage.youtubeWatched, 2);
+    expect(usage.countFor(ShortPlatform.tiktok), 5);
+    expect(usage.countFor(ShortPlatform.youtubeShorts), 2);
+    expect(usage.countFor(ShortPlatform.instagramReels), 3);
+    expect(usage.remainingFor(ShortPlatform.tiktok), 0);
+  });
+
+  test('لا يحتسب الفيديو نفسه مرتين', () async {
+    final store = DailyLimitStore();
+
+    await store.recordView(ShortPlatform.youtubeShorts, 'a');
+    await store.recordView(ShortPlatform.youtubeShorts, 'a');
+
+    final usage = await store.loadUsage();
+    expect(usage.countFor(ShortPlatform.youtubeShorts), 1);
   });
 }

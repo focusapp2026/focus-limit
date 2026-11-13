@@ -3,46 +3,15 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/daily_usage.dart';
-import '../models/short_video.dart';
+import '../models/short_platform.dart';
 
 class DailyLimitStore {
-  static const _videosKey = 'saved_videos_v1';
-  static const _usageKey = 'daily_usage_v1';
-
-  Future<List<ShortVideo>> loadVideos() async {
-    final preferences = await SharedPreferences.getInstance();
-    final raw = preferences.getString(_videosKey);
-    if (raw == null) return [];
-
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) {
-      throw const FormatException('قائمة الفيديوهات المحفوظة تالفة.');
-    }
-    return decoded
-        .map((item) => ShortVideo.fromJson(item as Map<String, dynamic>))
-        .toList();
-  }
-
-  Future<void> addVideo(ShortVideo video) async {
-    final videos = await loadVideos();
-    videos.insert(0, video);
-    await _saveVideos(videos);
-  }
-
-  Future<void> removeVideo(String videoId) async {
-    final videos = await loadVideos();
-    videos.removeWhere((video) => video.id == videoId);
-    await _saveVideos(videos);
-  }
+  static const _usageKey = 'daily_usage_v2';
 
   Future<DailyUsage> loadUsage() async {
     final preferences = await SharedPreferences.getInstance();
     final raw = preferences.getString(_usageKey);
-    if (raw == null) {
-      final freshUsage = DailyUsage.today();
-      await _saveUsage(preferences, freshUsage);
-      return freshUsage;
-    }
+    if (raw == null) return _resetUsage(preferences);
 
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) {
@@ -51,29 +20,27 @@ class DailyLimitStore {
 
     final savedUsage = DailyUsage.fromJson(decoded);
     if (savedUsage.dayKey != DailyUsage.todayKey()) {
-      final freshUsage = DailyUsage.today();
-      await _saveUsage(preferences, freshUsage);
-      return freshUsage;
+      return _resetUsage(preferences);
     }
     return savedUsage;
   }
 
-  Future<bool> consume(VideoPlatform platform) async {
+  Future<DailyUsage> recordView(ShortPlatform platform, String viewId) async {
     final preferences = await SharedPreferences.getInstance();
     final usage = await loadUsage();
-    if (usage.countFor(platform) >= platform.dailyLimit) return false;
+    if (usage.remainingFor(platform) == 0 || usage.hasViewed(platform, viewId)) {
+      return usage;
+    }
 
-    await _saveUsage(preferences, usage.increment(platform));
-    return true;
+    final updated = usage.withView(platform, viewId);
+    await _saveUsage(preferences, updated);
+    return updated;
   }
 
-  Future<void> _saveVideos(List<ShortVideo> videos) async {
-    final preferences = await SharedPreferences.getInstance();
-    final success = await preferences.setString(
-      _videosKey,
-      jsonEncode(videos.map((video) => video.toJson()).toList()),
-    );
-    if (!success) throw StateError('تعذر حفظ قائمة الفيديوهات.');
+  Future<DailyUsage> _resetUsage(SharedPreferences preferences) async {
+    final freshUsage = DailyUsage.today();
+    await _saveUsage(preferences, freshUsage);
+    return freshUsage;
   }
 
   Future<void> _saveUsage(

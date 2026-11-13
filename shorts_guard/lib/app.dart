@@ -18,7 +18,7 @@ class ShortsGuardApp extends StatelessWidget {
     );
 
     return MaterialApp(
-      title: 'مساحة',
+      title: 'PYM',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar'),
       theme: ThemeData(
