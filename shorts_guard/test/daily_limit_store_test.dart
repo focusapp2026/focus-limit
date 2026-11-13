@@ -21,18 +21,40 @@ void main() {
 
     final usage = await store.loadUsage();
     expect(usage.countFor(ShortPlatform.tiktok), 5);
-    expect(usage.countFor(ShortPlatform.youtubeShorts), 2);
-    expect(usage.countFor(ShortPlatform.instagramReels), 3);
+    expect(usage.countFor(ShortPlatform.youtubeShorts), 5);
+    expect(usage.countFor(ShortPlatform.instagramReels), 5);
+    expect(usage.countFor(ShortPlatform.youtubeLong), 2);
     expect(usage.remainingFor(ShortPlatform.tiktok), 0);
   });
 
   test('لا يحتسب الفيديو نفسه مرتين', () async {
     final store = DailyLimitStore();
 
-    await store.recordView(ShortPlatform.youtubeShorts, 'a');
-    await store.recordView(ShortPlatform.youtubeShorts, 'a');
+    await store.recordView(ShortPlatform.youtubeLong, 'a');
+    await store.recordView(ShortPlatform.youtubeLong, 'a');
 
     final usage = await store.loadUsage();
-    expect(usage.countFor(ShortPlatform.youtubeShorts), 1);
+    expect(usage.countFor(ShortPlatform.youtubeLong), 1);
+  });
+
+  test('صفحات تسجيل الدخول لا تُحتسب', () {
+    expect(
+      ShortPlatform.youtubeLong.countsPage(
+        Uri.parse('https://accounts.google.com/v3/signin/identifier'),
+      ),
+      isFalse,
+    );
+    expect(
+      ShortPlatform.tiktok.countsPage(
+        Uri.parse('https://www.tiktok.com/login/phone-or-email'),
+      ),
+      isFalse,
+    );
+    expect(
+      ShortPlatform.youtubeLong.countsPage(
+        Uri.parse('https://www.youtube.com/watch?v=abcdefghijk'),
+      ),
+      isTrue,
+    );
   });
 }

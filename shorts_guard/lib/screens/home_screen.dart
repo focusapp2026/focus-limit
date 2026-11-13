@@ -9,6 +9,14 @@ import '../services/daily_limit_store.dart';
 import '../widgets/platform_card.dart';
 import 'platform_browser_screen.dart';
 
+const _shortFormPlatforms = [
+  ShortPlatform.tiktok,
+  ShortPlatform.instagramReels,
+  ShortPlatform.youtubeShorts,
+];
+
+const _longFormPlatforms = [ShortPlatform.youtubeLong];
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -140,7 +148,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 style: TextStyle(color: Color(0xFF68736D), height: 1.5),
               ),
               const SizedBox(height: 20),
-              for (final platform in ShortPlatform.values) ...[
+              const _SectionTitle('الفيديوهات القصيرة'),
+              const SizedBox(height: 12),
+              for (final platform in _shortFormPlatforms) ...[
+                PlatformCard(
+                  platform: platform,
+                  usage: usage,
+                  onOpen: () => _openPlatform(platform),
+                  onReset: _refreshUsage,
+                ),
+                const SizedBox(height: 12),
+              ],
+              const SizedBox(height: 12),
+              const _SectionTitle('الفيديوهات الطويلة'),
+              const SizedBox(height: 12),
+              for (final platform in _longFormPlatforms) ...[
                 PlatformCard(
                   platform: platform,
                   usage: usage,
@@ -162,6 +184,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.title);
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Color(0xFF7C867F),
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
       ),
     );
   }

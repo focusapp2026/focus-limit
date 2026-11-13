@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../models/daily_usage.dart';
 import '../models/short_platform.dart';
@@ -17,6 +20,8 @@ class PlatformBrowserScreen extends StatefulWidget {
 
 class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   static const _trackerChannel = 'ShortsTracker';
+  static const _userAgent =
+      'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
   static const _pauseMediaScript =
       "document.querySelectorAll('video').forEach(function (v) { v.pause(); });";
 
@@ -62,9 +67,9 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
               ? NavigationDecision.navigate
               : NavigationDecision.prevent,
         ),
-      )
-      ..loadRequest(widget.platform.startUri);
+      );
     _pendingUpdate = _loadUsage();
+    _openStartPage();
   }
 
   String get _trackerScript =>
@@ -73,6 +78,7 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   if (window.__pymTracker) return;
   window.__pymTracker = true;
   var pattern = /${widget.platform.viewIdPattern}/;
+  var detectsMedia = ${widget.platform.detectsPlayingMedia};
   var lastId = null;
 
   function playingSource() {
@@ -84,11 +90,11 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   }
 
   function check() {
-    var match = location.pathname.match(pattern);
-    var id = match ? match[1] : playingSource();
+    var match = location.href.match(pattern);
+    var id = match ? match[1] : (detectsMedia ? playingSource() : null);
     if (id && id !== lastId) {
       lastId = id;
-      ${_trackerChannel}.postMessage(id);
+      ${_trackerChannel}.postMessage(JSON.stringify({ id: id, url: location.href }));
     }
   }
 
@@ -97,14 +103,25 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
 })();
 ''';
 
+  Future<void> _openStartPage() async {
+    await _controller.setUserAgent(_userAgent);
+    final platformController = _controller.platform;
+    final cookieManager = WebViewCookieManager().platform;
+    if (platformController is AndroidWebViewController &&
+        cookieManager is AndroidWebViewCookieManager) {
+      await cookieManager.setAcceptThirdPartyCookies(platformController, true);
+    }
+    await _controller.loadRequest(widget.platform.startUri);
+  }
+
   bool _allowNavigation(NavigationRequest request) {
     if (_isLocked) return false;
     if (!request.isMainFrame) return true;
 
-    final host = Uri.tryParse(request.url)?.host.toLowerCase() ?? '';
-    return widget.platform.allowedHosts.any(
-      (domain) => host == domain || host.endsWith('.$domain'),
-    );
+    final uri = Uri.tryParse(request.url);
+    return uri != null &&
+        uri.scheme == 'https' &&
+        hostMatches(uri, widget.platform.allowedHosts);
   }
 
   Future<void> _loadUsage() async {
@@ -130,9 +147,17 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   }
 
   void _handleViewDetected(JavaScriptMessage message) {
-    final viewId = message.message.trim();
-    if (viewId.isEmpty) return;
-    _pendingUpdate = _pendingUpdate.then((_) => _recordView(viewId));
+    final decoded = jsonDecode(message.message);
+    if (decoded is! Map<String, dynamic>) return;
+
+    final viewId = decoded['id'];
+    final pageUrl = decoded['url'];
+    final pageUri = pageUrl is String ? Uri.tryParse(pageUrl) : null;
+    if (viewId is! String || viewId.trim().isEmpty || pageUri == null) return;
+    if (!widget.platform.countsPage(pageUri)) return;
+
+    final trimmedId = viewId.trim();
+    _pendingUpdate = _pendingUpdate.then((_) => _recordView(trimmedId));
   }
 
   Future<void> _recordView(String viewId) async {
@@ -159,7 +184,7 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
       _isLoading = true;
     });
     _pendingUpdate = _loadUsage();
-    _controller.loadRequest(widget.platform.startUri);
+    _openStartPage();
   }
 
   @override

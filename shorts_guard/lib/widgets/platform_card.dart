@@ -64,7 +64,7 @@ class PlatformCard extends StatelessWidget {
                     Text(
                       isLocked
                           ? 'مغلق حتى الغد'
-                          : 'باقي $remaining من ${platform.dailyLimit} فيديوهات اليوم',
+                          : 'باقي $remaining من ${platform.dailyLimit} ${platform.isLong ? 'فيديوهات طويلة' : 'فيديوهات'} اليوم',
                       style: TextStyle(
                         color: isLocked
                             ? const Color(0xFF9B443B)
@@ -88,14 +88,11 @@ class PlatformCard extends StatelessWidget {
                 ),
               ),
               Icon(
-                isLocked
-                    ? Icons.lock_rounded
-                    : Icons.arrow_forward_ios_rounded,
+                isLocked ? Icons.lock_rounded : Icons.chevron_left_rounded,
                 color: isLocked
                     ? const Color(0xFF9B443B)
                     : const Color(0xFF8B938E),
-                size: isLocked ? 22 : 16,
-                matchTextDirection: !isLocked,
+                size: isLocked ? 22 : 24,
               ),
             ],
           ),
@@ -108,11 +105,13 @@ class PlatformCard extends StatelessWidget {
     ShortPlatform.tiktok => const Color(0xFF246A55),
     ShortPlatform.youtubeShorts => const Color(0xFFC44639),
     ShortPlatform.instagramReels => const Color(0xFF9C4A1A),
+    ShortPlatform.youtubeLong => const Color(0xFF2F5D8A),
   };
 
   static IconData _iconFor(ShortPlatform platform) => switch (platform) {
     ShortPlatform.tiktok => Icons.music_note_rounded,
     ShortPlatform.youtubeShorts => Icons.smart_display_rounded,
     ShortPlatform.instagramReels => Icons.movie_filter_outlined,
+    ShortPlatform.youtubeLong => Icons.ondemand_video_rounded,
   };
 }
