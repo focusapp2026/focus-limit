@@ -49,12 +49,30 @@ enum ShortPlatform {
   bool get isLong => this == ShortPlatform.youtubeLong;
 
   bool countsPage(Uri uri) =>
-      hostMatches(uri, contentHosts) && !_signInPath.hasMatch(uri.path.toLowerCase());
+      hostMatches(uri, contentHosts) && !isAuthPage(uri);
+
+  bool allowsNavigation(Uri uri) =>
+      hostMatches(uri, allowedHosts) || isAuthPage(uri);
+
+  bool isAuthPage(Uri uri) =>
+      hostMatches(uri, _signInHosts) ||
+      uri.pathSegments.any(
+        (segment) => _authSegments.contains(segment.toLowerCase()),
+      );
 }
 
 const _signInHosts = ['google.com', 'apple.com', 'facebook.com'];
 
-final _signInPath = RegExp(r'login|signin|sign-in|accounts');
+const _authSegments = {
+  'login',
+  'signin',
+  'sign-in',
+  'accounts',
+  'auth',
+  'oauth',
+  'oauth2',
+  'callback',
+};
 
 bool hostMatches(Uri uri, List<String> domains) {
   final host = uri.host.toLowerCase();

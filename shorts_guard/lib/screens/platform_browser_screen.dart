@@ -21,7 +21,7 @@ class PlatformBrowserScreen extends StatefulWidget {
 class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   static const _trackerChannel = 'ShortsTracker';
   static const _userAgent =
-      'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
   static final _blankPage = Uri.parse('about:blank');
 
   final DailyLimitStore _store = DailyLimitStore();
@@ -48,6 +48,7 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
             if (mounted) setState(() => _isLoading = true);
           },
           onPageFinished: (_) => _handlePageFinished(),
+          onUrlChange: (_) => _injectTrackerOnContentPage(),
           onWebResourceError: (error) {
             if (error.isForMainFrame == true && mounted) {
               setState(() {
@@ -116,7 +117,7 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
     final uri = Uri.tryParse(request.url);
     return uri != null &&
         uri.scheme == 'https' &&
-        hostMatches(uri, widget.platform.allowedHosts);
+        widget.platform.allowsNavigation(uri);
   }
 
   Future<void> _loadUsage() async {
@@ -136,6 +137,14 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
       _isLoading = false;
       _loadError = null;
     });
+    await _injectTrackerOnContentPage();
+  }
+
+  Future<void> _injectTrackerOnContentPage() async {
+    if (_isLocked) return;
+    final url = await _controller.currentUrl();
+    final uri = url == null ? null : Uri.tryParse(url);
+    if (uri != null && widget.platform.isAuthPage(uri)) return;
     await _controller.runJavaScript(_trackerScript);
   }
 
