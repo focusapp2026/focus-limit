@@ -39,7 +39,7 @@ enum ShortPlatform {
     ShortPlatform.tiktok => r'\/video\/(\d+)',
     ShortPlatform.youtubeShorts => r'\/shorts\/([A-Za-z0-9_-]+)',
     ShortPlatform.instagramReels => r'\/reels?\/([A-Za-z0-9_-]+)',
-    ShortPlatform.youtubeLong => r'[?&]v=([A-Za-z0-9_-]+)',
+    ShortPlatform.youtubeLong => r'\/watch\?(?:.*&)?v=([A-Za-z0-9_-]+)',
   };
 
   // Feeds without an id in the URL are identified by the playing video's source.

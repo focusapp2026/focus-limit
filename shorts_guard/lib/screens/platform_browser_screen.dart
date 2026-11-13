@@ -22,20 +22,15 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   static const _trackerChannel = 'ShortsTracker';
   static const _userAgent =
       'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
-  static const _pauseMediaScript =
-      "document.querySelectorAll('video').forEach(function (v) { v.pause(); });";
+  static final _blankPage = Uri.parse('about:blank');
 
   final DailyLimitStore _store = DailyLimitStore();
   late final WebViewController _controller;
   Future<void> _pendingUpdate = Future.value();
   DailyUsage? _usage;
+  bool _isLocked = false;
   bool _isLoading = true;
   String? _loadError;
-
-  bool get _isLocked {
-    final usage = _usage;
-    return usage != null && usage.remainingFor(widget.platform) == 0;
-  }
 
   @override
   void initState() {
@@ -129,7 +124,6 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
       final usage = await _store.loadUsage();
       if (!mounted) return;
       setState(() => _usage = usage);
-      if (_isLocked) await _pauseMedia();
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadError = 'تعذر تحميل عدّاد اليوم. حاول مجددًا.');
@@ -137,16 +131,16 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   }
 
   Future<void> _handlePageFinished() async {
-    if (!mounted) return;
+    if (!mounted || _isLocked) return;
     setState(() {
       _isLoading = false;
       _loadError = null;
     });
     await _controller.runJavaScript(_trackerScript);
-    if (_isLocked) await _pauseMedia();
   }
 
   void _handleViewDetected(JavaScriptMessage message) {
+    if (_isLocked) return;
     final decoded = jsonDecode(message.message);
     if (decoded is! Map<String, dynamic>) return;
 
@@ -157,17 +151,23 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
     if (!widget.platform.countsPage(pageUri)) return;
 
     final trimmedId = viewId.trim();
-    _pendingUpdate = _pendingUpdate.then((_) => _recordView(trimmedId));
+    _pendingUpdate = _pendingUpdate.then((_) => _registerView(trimmedId));
   }
 
-  Future<void> _recordView(String viewId) async {
+  Future<void> _registerView(String viewId) async {
+    if (_isLocked) return;
     try {
-      final usage = await _store.recordView(widget.platform, viewId);
+      final result = await _store.recordView(widget.platform, viewId);
       if (!mounted) return;
-      setState(() => _usage = usage);
-      if (_isLocked) await _pauseMedia();
+      if (result.outcome == ViewOutcome.limitReached) {
+        _isLocked = true;
+        await _controller.loadRequest(_blankPage);
+      }
+      if (!mounted) return;
+      setState(() => _usage = result.usage);
     } catch (_) {
       if (!mounted) return;
+      setState(() {});
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
@@ -176,7 +176,16 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
     }
   }
 
-  Future<void> _pauseMedia() => _controller.runJavaScript(_pauseMediaScript);
+  Future<void> _handleDayReset() async {
+    if (!mounted) return;
+    setState(() {
+      _isLocked = false;
+      _isLoading = true;
+      _loadError = null;
+    });
+    await _loadUsage();
+    if (mounted) await _openStartPage();
+  }
 
   void _retry() {
     setState(() {
@@ -190,7 +199,6 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   @override
   Widget build(BuildContext context) {
     final usage = _usage;
-    final isLocked = _isLocked;
 
     return Scaffold(
       backgroundColor: const Color(0xFF101412),
@@ -217,8 +225,9 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
       ),
       body: Stack(
         children: [
-          Positioned.fill(child: WebViewWidget(controller: _controller)),
-          if (_isLoading && !isLocked)
+          if (!_isLocked)
+            Positioned.fill(child: WebViewWidget(controller: _controller)),
+          if (_isLoading && !_isLocked)
             const Align(
               alignment: Alignment.topCenter,
               child: LinearProgressIndicator(
@@ -226,7 +235,7 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
                 backgroundColor: Color(0xFF26332D),
               ),
             ),
-          if (_loadError != null && !isLocked)
+          if (_loadError != null && !_isLocked)
             ColoredBox(
               color: const Color(0xFF101412),
               child: Center(
@@ -260,11 +269,11 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
                 ),
               ),
             ),
-          if (isLocked)
+          if (_isLocked)
             Positioned.fill(
               child: LockOverlay(
                 platform: widget.platform,
-                onReset: () => _loadUsage(),
+                onReset: _handleDayReset,
               ),
             ),
         ],

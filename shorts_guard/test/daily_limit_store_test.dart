@@ -37,6 +37,21 @@ void main() {
     expect(usage.countFor(ShortPlatform.youtubeLong), 1);
   });
 
+  test('يبلغ عن القفل عند الفيديو الذي يتجاوز الحد فقط', () async {
+    final store = DailyLimitStore();
+
+    for (var index = 0; index < 5; index++) {
+      final result = await store.recordView(ShortPlatform.tiktok, 'v$index');
+      expect(result.outcome, ViewOutcome.counted);
+    }
+    final fifth = await store.recordView(ShortPlatform.tiktok, 'v4');
+    expect(fifth.outcome, ViewOutcome.alreadyCounted);
+
+    final sixth = await store.recordView(ShortPlatform.tiktok, 'v5');
+    expect(sixth.outcome, ViewOutcome.limitReached);
+    expect(sixth.usage.countFor(ShortPlatform.tiktok), 5);
+  });
+
   test('صفحات تسجيل الدخول لا تُحتسب', () {
     expect(
       ShortPlatform.youtubeLong.countsPage(
