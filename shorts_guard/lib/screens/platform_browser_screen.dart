@@ -58,10 +58,17 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
               });
             }
           },
-          onNavigationRequest: (request) =>
-              _allowNavigation(request)
-              ? NavigationDecision.navigate
-              : NavigationDecision.prevent,
+          onNavigationRequest: (request) {
+            if (_isExternalAppLink(request.url)) {
+              // Links like "Open TikTok" try to leave the WebView for the
+              // native app; block them and stop the endless loading bar.
+              if (mounted) setState(() => _isLoading = false);
+              return NavigationDecision.prevent;
+            }
+            return _allowNavigation(request)
+                ? NavigationDecision.navigate
+                : NavigationDecision.prevent;
+          },
         ),
       );
     _pendingUpdate = _loadUsage();
@@ -98,6 +105,109 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
   check();
 })();
 ''';
+
+  // Dismisses "Open TikTok / Open Instagram / Get the full app experience"
+  // prompts by pressing "Not now" or the close (X) button, then hides them.
+  static const _popupDismissScript = r'''
+(function () {
+  if (window.__pymPopupGuard) return;
+  window.__pymPopupGuard = true;
+
+  var promptText = /(get the full app experience|open tiktok|open instagram|open app|open the app|use the app|open in app|continue in app|افتح التطبيق|فتح التطبيق|استخدم التطبيق)/i;
+  var dismissText = /^(not now|no thanks|maybe later|continue in browser|stay in browser|cancel|close|ليس الآن|لاحقًا|لاحقا|إلغاء|إغلاق|المتابعة في المتصفح)$/i;
+  var closeLabel = /(close|dismiss|not now|إغلاق|ليس الآن)/i;
+
+  function textOf(el) {
+    return (el.innerText || el.textContent || '').trim();
+  }
+
+  function isOverlay(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    var role = el.getAttribute && el.getAttribute('role');
+    if (role === 'dialog' || role === 'alertdialog' || el.tagName === 'DIALOG') return true;
+    var pos = window.getComputedStyle(el).position;
+    return pos === 'fixed' || pos === 'sticky';
+  }
+
+  function findOverlay(el) {
+    var node = el;
+    for (var depth = 0; node && depth < 12; depth++) {
+      if (isOverlay(node)) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function pressDismiss(container) {
+    var buttons = container.querySelectorAll('button, [role="button"], a, div[tabindex], span[tabindex]');
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      var t = textOf(b);
+      var label = (b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '');
+      if ((t && dismissText.test(t)) || closeLabel.test(label) || t === '×' || t === '✕' || t === 'X') {
+        try { b.click(); return true; } catch (e) {}
+      }
+    }
+    return false;
+  }
+
+  function sweep() {
+    var candidates = document.querySelectorAll(
+      '[role="dialog"], [role="alertdialog"], dialog, button, a, div, section'
+    );
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      if (el.__pymHandled) continue;
+      var t = textOf(el);
+      if (!t || t.length > 300 || !promptText.test(t)) continue;
+      var overlay = findOverlay(el);
+      if (!overlay || overlay.__pymHandled) continue;
+      // Never hide something that covers the whole page content.
+      if (textOf(overlay).length > 600) continue;
+      overlay.__pymHandled = true;
+      el.__pymHandled = true;
+      pressDismiss(overlay);
+      overlay.style.setProperty('display', 'none', 'important');
+    }
+    // Restore scrolling if a modal locked the page.
+    if (document.body && document.body.style.overflow === 'hidden') {
+      document.body.style.overflow = '';
+    }
+    if (document.documentElement && document.documentElement.style.overflow === 'hidden') {
+      document.documentElement.style.overflow = '';
+    }
+  }
+
+  setInterval(sweep, 800);
+  sweep();
+})();
+''';
+
+  static bool _isExternalAppLink(String url) {
+    final lower = url.toLowerCase();
+    return lower.startsWith('intent://') ||
+        lower.startsWith('intent:') ||
+        lower.startsWith('tiktok://') ||
+        lower.startsWith('snssdk') ||
+        lower.startsWith('instagram://') ||
+        lower.startsWith('market://');
+  }
+
+  Uri get _loginUri => switch (widget.platform) {
+    ShortPlatform.tiktok => Uri.parse('https://tiktok.com'),
+    ShortPlatform.instagramReels => Uri.parse('https://instagram.com'),
+    ShortPlatform.youtubeShorts ||
+    ShortPlatform.youtubeLong => Uri.parse('https://google.com'),
+  };
+
+  Future<void> _openLoginPage() async {
+    if (_isLocked) return;
+    setState(() {
+      _loadError = null;
+      _isLoading = true;
+    });
+    await _controller.loadRequest(_loginUri);
+  }
 
   Future<void> _openStartPage() async {
     await _controller.setUserAgent(_userAgent);
@@ -142,6 +252,7 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
 
   Future<void> _injectTrackerOnContentPage() async {
     if (_isLocked) return;
+    await _controller.runJavaScript(_popupDismissScript);
     final url = await _controller.currentUrl();
     final uri = url == null ? null : Uri.tryParse(url);
     if (uri != null && widget.platform.isAuthPage(uri)) return;
@@ -216,6 +327,13 @@ class _PlatformBrowserScreenState extends State<PlatformBrowserScreen> {
         foregroundColor: Colors.white,
         title: Text(widget.platform.label),
         actions: [
+          if (!_isLocked)
+            IconButton(
+              tooltip: 'تسجيل الدخول',
+              iconSize: 20,
+              icon: const Icon(Icons.login_rounded),
+              onPressed: _openLoginPage,
+            ),
           if (usage != null)
             Center(
               child: Padding(
